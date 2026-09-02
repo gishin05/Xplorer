@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Z-Explorer</string>
+    <string name="device_admin_label">Z-Explorer Storage Management</string>
+    <string name="device_admin_description">Enables elevated enterprise storage and file management capabilities.</string>
+</resources>
