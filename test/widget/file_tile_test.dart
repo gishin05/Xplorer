@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:file_manager/models/file_item.dart';
 import 'package:file_manager/widgets/file_tile.dart';
@@ -17,13 +18,15 @@ void main() {
     var tapped = false;
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: FileTile(
-            item: folderItem,
-            onTap: () {
-              tapped = true;
-            },
+      ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: FileTile(
+              item: folderItem,
+              onTap: () {
+                tapped = true;
+              },
+            ),
           ),
         ),
       ),
@@ -48,11 +51,13 @@ void main() {
     );
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: FileTile(
-            item: fileItem,
-            onTap: () {},
+      ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: FileTile(
+              item: fileItem,
+              onTap: () {},
+            ),
           ),
         ),
       ),

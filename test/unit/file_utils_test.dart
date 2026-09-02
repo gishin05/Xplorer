@@ -13,8 +13,13 @@ void main() {
 
     test('getCategory categorizes file extensions correctly', () {
       expect(FileUtils.getCategory('zip', false), 'Archive');
+      expect(FileUtils.getCategory('7z', false), 'Archive');
+      expect(FileUtils.getCategory('tar', false), 'Archive');
       expect(FileUtils.getCategory('apk', false), 'Package');
       expect(FileUtils.getCategory('png', false), 'Image');
+      expect(FileUtils.getCategory('webp', false), 'Image');
+      expect(FileUtils.getCategory('svg', false), 'Image');
+      expect(FileUtils.getCategory('heic', false), 'Image');
       expect(FileUtils.getCategory('mp4', false), 'Video');
       expect(FileUtils.getCategory('mp3', false), 'Audio');
       expect(FileUtils.getCategory('pdf', false), 'Document');

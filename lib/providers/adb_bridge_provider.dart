@@ -55,9 +55,9 @@ class AdbBridgeNotifier extends StateNotifier<AdbBridgeState> {
     final devInfo = await _platformService.checkDeveloperOptions();
     final isDevOn = devInfo['isDevOptionsEnabled'] ?? false;
     final isAdbOn = devInfo['isAdbEnabled'] ?? false;
-    final isAutoActive = devInfo['isAutoBridgeActive'] ?? false;
 
-    final shouldAutoConnect = state.isAutoBridgeEnabled && (isDevOn || isAdbOn || isAutoActive);
+    // Elevated Virtual Bridge connects automatically whenever isAutoBridgeEnabled is true
+    final shouldAutoConnect = state.isAutoBridgeEnabled;
 
     if (shouldAutoConnect) {
       _bridgeService.setAutoBridgeConnected(true);

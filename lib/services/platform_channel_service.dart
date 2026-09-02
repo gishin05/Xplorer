@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/services.dart';
+import '../models/archive_entry_item.dart';
 import '../models/file_item.dart';
 import '../models/permission_status.dart';
 import '../models/storage_volume.dart';
@@ -490,5 +491,51 @@ class PlatformChannelService {
       'password': password,
     });
     return res ?? false;
+  }
+
+  Future<Uint8List?> getApkIcon(String path) async {
+    if (!Platform.isAndroid) return null;
+    try {
+      final dynamic res = await _channel.invokeMethod('getApkIcon', {'path': path});
+      if (res is Uint8List) return res;
+      if (res is List) return Uint8List.fromList(res.cast<int>());
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<List<ArchiveEntryItem>> listArchiveEntries(String path, {String? password}) async {
+    if (!Platform.isAndroid) return [];
+    try {
+      final List<dynamic>? res = await _channel.invokeMethod('listArchiveEntries', {
+        'path': path,
+        'password': password,
+      });
+      if (res == null) return [];
+      return res.map((e) => ArchiveEntryItem.fromMap(e as Map<dynamic, dynamic>)).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<String?> extractArchiveEntry({
+    required String archivePath,
+    required String entryName,
+    required String destinationPath,
+    String? password,
+  }) async {
+    if (!Platform.isAndroid) return null;
+    try {
+      final String? res = await _channel.invokeMethod('extractArchiveEntry', {
+        'archivePath': archivePath,
+        'entryName': entryName,
+        'destinationPath': destinationPath,
+        'password': password,
+      });
+      return res;
+    } catch (_) {
+      return null;
+    }
   }
 }

@@ -1,17 +1,54 @@
-<?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <group
-        android:translateX="26"
-        android:translateY="28"
-        android:scaleX="2.35"
-        android:scaleY="2.35">
-        <!-- Solid color folder icon (Teal #00BFA5) -->
-        <path
-            android:fillColor="#00BFA5"
-            android:pathData="M10,4 H4 C2.9,4 2.01,4.9 2.01,6 L2,18 C2,19.1 2.9,20 4,20 H20 C21.1,20 22,19.1 22,18 V8 C22,6.9 21.1,6 20,6 H12 L10,4 Z" />
-    </group>
+
+    <!-- Folder Back Plate & Tab -->
+    <path
+        android:fillColor="#141820"
+        android:strokeColor="#283040"
+        android:strokeWidth="1.5"
+        android:pathData="M 22,26 L 46,26 L 53,33 L 86,33 C 89,33 91,35 91,38 L 91,80 C 91,84 88,86 84,86 L 24,86 C 20,86 17,84 17,80 L 17,31 C 17,28 19,26 22,26 Z" />
+
+    <!-- Folder Front Flap / Cover -->
+    <path
+        android:fillColor="#1E2533"
+        android:strokeColor="#00897B"
+        android:strokeWidth="1.5"
+        android:pathData="M 18,41 L 90,41 C 93,41 95,43 94,46 L 90,82 C 89,86 86,88 82,88 L 26,88 C 22,88 19,86 18,82 L 14,46 C 13,43 15,41 18,41 Z" />
+
+    <!-- Top-Left Shard -->
+    <path
+        android:fillColor="#26A69A"
+        android:pathData="M 37,50 L 48,50 L 52,60 L 45,62 Z" />
+
+    <!-- Top-Right Shard -->
+    <path
+        android:fillColor="#00897B"
+        android:pathData="M 59,50 L 71,50 L 63,62 L 56,60 Z" />
+
+    <!-- Bottom-Left Shard -->
+    <path
+        android:fillColor="#00897B"
+        android:pathData="M 44,66 L 51,69 L 46,78 L 37,78 Z" />
+
+    <!-- Bottom-Right Shard -->
+    <path
+        android:fillColor="#26A69A"
+        android:pathData="M 57,69 L 64,66 L 71,78 L 62,78 Z" />
+
+    <!-- Electric Fissure Line Cut -->
+    <path
+        android:strokeColor="#E2E8F0"
+        android:strokeWidth="1.6"
+        android:strokeLineCap="round"
+        android:pathData="M 42,52 L 51,61 L 57,63 L 53,70 L 66,77" />
+
+    <!-- Cyan Ambient Core Highlight -->
+    <path
+        android:strokeColor="#80CBC4"
+        android:strokeWidth="0.8"
+        android:strokeLineCap="round"
+        android:pathData="M 43,53 L 51,61 L 57,63 L 53,70 L 65,76" />
 </vector>

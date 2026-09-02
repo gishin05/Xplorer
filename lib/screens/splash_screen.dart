@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/adb_bridge_provider.dart';
 import '../providers/file_explorer_provider.dart';
+import '../providers/theme_provider.dart';
 import '../theme/colors.dart';
+import '../widgets/cracked_x_logo.dart';
 import 'explorer_screen.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
@@ -67,6 +69,8 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
 
   @override
   Widget build(BuildContext context) {
+    final theme = ref.watch(themeProvider);
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: Stack(
@@ -81,7 +85,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                   shape: BoxShape.circle,
                   gradient: RadialGradient(
                     colors: [
-                      AppColors.accentTeal.withValues(alpha: 0.12),
+                      theme.primary.withValues(alpha: 0.12),
                       Colors.transparent,
                     ],
                   ),
@@ -102,56 +106,21 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Folder Icon Container
-                        Container(
-                          width: 88,
-                          height: 88,
-                          decoration: BoxDecoration(
-                            color: AppColors.surfaceGlass,
-                            borderRadius: BorderRadius.circular(24),
-                            border: Border.all(
-                              color: AppColors.accentTeal.withValues(alpha: 0.35),
-                              width: 1.5,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppColors.accentTeal.withValues(alpha: 0.2),
-                                blurRadius: 28,
-                                spreadRadius: 2,
-                                offset: const Offset(0, 8),
-                              ),
-                            ],
-                          ),
-                          child: const Center(
-                            child: Icon(
-                              Icons.folder_rounded,
-                              size: 48,
-                              color: AppColors.accentTeal,
-                            ),
-                          ),
+                        // Stylized Cracked X Logo with dynamic theme color
+                        CrackedXLogo(
+                          size: 80,
+                          accentColor: theme.primary,
                         ),
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 20),
 
                         // Title
                         const Text(
-                          'Xplorer',
+                          'Xplorer Manager',
                           style: TextStyle(
                             fontSize: 28,
                             fontWeight: FontWeight.w700,
                             letterSpacing: -0.5,
                             color: AppColors.textPrimary,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-
-                        // Subtitle
-                        Text(
-                          'STORAGE & WIRELESS ADB BRIDGE',
-                          style: TextStyle(
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 1.6,
-                            color: AppColors.accentTealLight.withValues(alpha: 0.8),
                           ),
                         ),
                       ],
@@ -172,10 +141,10 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                 width: 120,
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(4),
-                  child: const LinearProgressIndicator(
+                  child: LinearProgressIndicator(
                     minHeight: 2.5,
                     backgroundColor: AppColors.surfaceDark,
-                    color: AppColors.accentTeal,
+                    color: theme.primary,
                   ),
                 ),
               ),

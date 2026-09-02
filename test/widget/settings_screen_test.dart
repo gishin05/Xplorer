@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('SettingsScreen renders minimalist cards without unnecessary decorative icons', (tester) async {
+  testWidgets('SettingsScreen renders File Access, General Settings, and Interface Themes', (tester) async {
     await tester.pumpWidget(
       const ProviderScope(
         child: MaterialApp(
@@ -13,30 +13,28 @@ void main() {
       ),
     );
 
-    // Initial loading or loaded state
     await tester.pumpAndSettle();
 
-    // Verify key sections are present
+    // Verify top sections
     expect(find.text('Settings'), findsOneWidget);
-    expect(find.text('STORAGE & ELEVATED ACCESS'), findsOneWidget);
-    expect(find.text('All Files Access'), findsOneWidget);
-    expect(find.text('Wireless ADB Helper Bridge'), findsOneWidget);
-    expect(find.text('Auto-Bridge on Developer Options'), findsOneWidget);
-    expect(find.text('Enterprise Device Owner Mode'), findsOneWidget);
+    expect(find.text('PERMISSIONS & ACCESS'), findsOneWidget);
+    expect(find.text('File Access'), findsOneWidget);
+    expect(find.text('GENERAL SETTINGS'), findsOneWidget);
+    expect(find.text('Home Folder'), findsOneWidget);
+    expect(find.text('Overwrite Confirmation'), findsOneWidget);
+    expect(find.text('Back Button Action'), findsOneWidget);
 
-    // Scroll down to reveal system information section
+    // Scroll down to see Interface Settings and Application section
     await tester.drag(find.byType(ListView), const Offset(0, -400));
     await tester.pumpAndSettle();
 
-    expect(find.text('INTRODUCTION & GUIDE'), findsOneWidget);
-    expect(find.text('Xplorer'), findsOneWidget);
-    expect(find.text('v1.2.1'), findsOneWidget);
-    expect(find.text('Welcome to Xplorer'), findsOneWidget);
+    expect(find.text('INTERFACE SETTINGS'), findsOneWidget);
+    expect(find.text('Color Theme'), findsOneWidget);
+    expect(find.text('About Xplorer Manager'), findsOneWidget);
 
-    // Confirm that old unnecessary icons are NOT present
-    expect(find.byIcon(Icons.security_rounded), findsNothing);
-    expect(find.byIcon(Icons.admin_panel_settings_rounded), findsNothing);
-    expect(find.byIcon(Icons.wifi_tethering_rounded), findsNothing);
-    expect(find.byIcon(Icons.chevron_right_rounded), findsNothing);
+    // Confirm that removed sections are NOT present
+    expect(find.text('Wireless ADB Helper Bridge'), findsNothing);
+    expect(find.text('Enterprise Device Owner Mode'), findsNothing);
+    expect(find.text('Next-Gen Elevated Android File Manager'), findsNothing);
   });
 }

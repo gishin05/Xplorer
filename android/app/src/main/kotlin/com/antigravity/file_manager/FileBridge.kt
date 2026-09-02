@@ -7,6 +7,9 @@ import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
 import android.graphics.pdf.PdfRenderer
 import android.media.MediaPlayer
 import android.net.Uri
@@ -198,6 +201,34 @@ class FileBridge(private val context: Context) : MethodChannel.MethodCallHandler
                     result.error("INVALID_ARGS", "archivePath and destinationPath are required", null)
                 } else {
                     extractArchive(archivePath, destinationPath, password, result)
+                }
+            }
+            "getApkIcon" -> {
+                val path = call.argument<String>("path")
+                if (path == null) {
+                    result.error("INVALID_ARGS", "path is required", null)
+                } else {
+                    getApkIcon(path, result)
+                }
+            }
+            "listArchiveEntries" -> {
+                val path = call.argument<String>("path")
+                val password = call.argument<String>("password")
+                if (path == null) {
+                    result.error("INVALID_ARGS", "path is required", null)
+                } else {
+                    listArchiveEntries(path, password, result)
+                }
+            }
+            "extractArchiveEntry" -> {
+                val archivePath = call.argument<String>("archivePath")
+                val entryName = call.argument<String>("entryName")
+                val destinationPath = call.argument<String>("destinationPath")
+                val password = call.argument<String>("password")
+                if (archivePath == null || entryName == null || destinationPath == null) {
+                    result.error("INVALID_ARGS", "archivePath, entryName, and destinationPath are required", null)
+                } else {
+                    extractArchiveEntry(archivePath, entryName, destinationPath, password, result)
                 }
             }
             else -> result.notImplemented()
@@ -1264,6 +1295,229 @@ class FileBridge(private val context: Context) : MethodChannel.MethodCallHandler
             tarOut.closeArchiveEntry()
             file.listFiles()?.forEach { child ->
                 addFileToTar(tarOut, child, entryName)
+            }
+        }
+    }
+
+    private fun getApkIcon(path: String, result: MethodChannel.Result) {
+        scope.launch(Dispatchers.IO) {
+            try {
+                val pm = context.packageManager
+                val file = File(path)
+                if (!file.exists()) {
+                    withContext(Dispatchers.Main) { result.success(null) }
+                    return@launch
+                }
+
+                val drawable: Drawable? = if (path.endsWith(".apk", ignoreCase = true)) {
+                    val archiveInfo = pm.getPackageArchiveInfo(path, 0)
+                    if (archiveInfo != null) {
+                        archiveInfo.applicationInfo?.let { appInfo ->
+                            appInfo.sourceDir = path
+                            appInfo.publicSourceDir = path
+                            appInfo.loadIcon(pm)
+                        }
+                    } else {
+                        null
+                    }
+                } else {
+                    null
+                }
+
+                if (drawable == null) {
+                    withContext(Dispatchers.Main) { result.success(null) }
+                    return@launch
+                }
+
+                val bitmap = if (drawable is BitmapDrawable && drawable.bitmap != null) {
+                    drawable.bitmap
+                } else {
+                    val w = if (drawable.intrinsicWidth > 0) drawable.intrinsicWidth else 96
+                    val h = if (drawable.intrinsicHeight > 0) drawable.intrinsicHeight else 96
+                    val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                    val canvas = Canvas(bmp)
+                    drawable.setBounds(0, 0, canvas.width, canvas.height)
+                    drawable.draw(canvas)
+                    bmp
+                }
+
+                val stream = ByteArrayOutputStream()
+                bitmap.compress(Bitmap.CompressFormat.PNG, 85, stream)
+                val bytes = stream.toByteArray()
+
+                withContext(Dispatchers.Main) {
+                    result.success(bytes)
+                }
+            } catch (_: Exception) {
+                withContext(Dispatchers.Main) {
+                    result.success(null)
+                }
+            }
+        }
+    }
+
+    private fun listArchiveEntries(path: String, password: String?, result: MethodChannel.Result) {
+        scope.launch(Dispatchers.IO) {
+            try {
+                val file = File(path)
+                if (!file.exists()) {
+                    withContext(Dispatchers.Main) {
+                        result.error("NOT_FOUND", "Archive not found: $path", null)
+                    }
+                    return@launch
+                }
+
+                val entriesList = mutableListOf<Map<String, Any?>>()
+                val ext = file.extension.lowercase()
+
+                if (ext == "zip") {
+                    val zipFile = if (!password.isNullOrEmpty()) ZipFile(file, password.toCharArray()) else ZipFile(file)
+                    val headers = zipFile.fileHeaders
+                    for (header in headers) {
+                        entriesList.add(mapOf(
+                            "name" to header.fileName,
+                            "uncompressedSize" to header.uncompressedSize,
+                            "compressedSize" to header.compressedSize,
+                            "isDirectory" to header.isDirectory,
+                            "lastModified" to header.lastModifiedTime,
+                            "isEncrypted" to header.isEncrypted
+                        ))
+                    }
+                } else if (ext == "7z") {
+                    val sevenZFile = if (!password.isNullOrEmpty()) {
+                        SevenZFile.builder().setFile(file).setPassword(password.toByteArray(Charsets.UTF_16LE)).get()
+                    } else {
+                        SevenZFile.builder().setFile(file).get()
+                    }
+                    for (entry in sevenZFile.entries) {
+                        entriesList.add(mapOf(
+                            "name" to entry.name,
+                            "uncompressedSize" to entry.size,
+                            "compressedSize" to 0L,
+                            "isDirectory" to entry.isDirectory,
+                            "lastModified" to (entry.lastModifiedDate?.time ?: file.lastModified()),
+                            "isEncrypted" to (entry.hasStream() && !password.isNullOrEmpty())
+                        ))
+                    }
+                    sevenZFile.close()
+                } else if (ext == "tar" || ext == "gz" || ext == "tgz") {
+                    val rawIn = FileInputStream(file)
+                    val inStream = if (ext == "gz" || ext == "tgz" || path.endsWith(".tar.gz", ignoreCase = true)) {
+                        TarArchiveInputStream(GzipCompressorInputStream(BufferedInputStream(rawIn)))
+                    } else {
+                        TarArchiveInputStream(BufferedInputStream(rawIn))
+                    }
+                    var entry: TarArchiveEntry? = inStream.nextTarEntry
+                    while (entry != null) {
+                        entriesList.add(mapOf(
+                            "name" to entry.name,
+                            "uncompressedSize" to entry.size,
+                            "compressedSize" to entry.size,
+                            "isDirectory" to entry.isDirectory,
+                            "lastModified" to (entry.modTime?.time ?: file.lastModified()),
+                            "isEncrypted" to false
+                        ))
+                        entry = inStream.nextTarEntry
+                    }
+                    inStream.close()
+                }
+
+                withContext(Dispatchers.Main) {
+                    result.success(entriesList)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    result.error("LIST_ARCHIVE_ERROR", e.localizedMessage, null)
+                }
+            }
+        }
+    }
+
+    private fun extractArchiveEntry(
+        archivePath: String,
+        entryName: String,
+        destinationPath: String,
+        password: String?,
+        result: MethodChannel.Result
+    ) {
+        scope.launch(Dispatchers.IO) {
+            try {
+                val archiveFile = File(archivePath)
+                if (!archiveFile.exists()) {
+                    withContext(Dispatchers.Main) {
+                        result.error("NOT_FOUND", "Archive not found: $archivePath", null)
+                    }
+                    return@launch
+                }
+
+                val destFile = File(destinationPath)
+                destFile.parentFile?.mkdirs()
+
+                val ext = archiveFile.extension.lowercase()
+                var extracted = false
+
+                if (ext == "zip") {
+                    val zipFile = if (!password.isNullOrEmpty()) ZipFile(archiveFile, password.toCharArray()) else ZipFile(archiveFile)
+                    val header = zipFile.getFileHeader(entryName)
+                    if (header != null) {
+                        zipFile.extractFile(header, destFile.parentFile!!.absolutePath, destFile.name)
+                        extracted = true
+                    }
+                } else if (ext == "7z") {
+                    val sevenZFile = if (!password.isNullOrEmpty()) {
+                        SevenZFile.builder().setFile(archiveFile).setPassword(password.toByteArray(Charsets.UTF_16LE)).get()
+                    } else {
+                        SevenZFile.builder().setFile(archiveFile).get()
+                    }
+                    var entry = sevenZFile.nextEntry
+                    while (entry != null) {
+                        if (entry.name == entryName) {
+                            val out = FileOutputStream(destFile)
+                            val buffer = ByteArray(8192)
+                            var bytesRead = sevenZFile.read(buffer)
+                            while (bytesRead != -1) {
+                                out.write(buffer, 0, bytesRead)
+                                bytesRead = sevenZFile.read(buffer)
+                            }
+                            out.close()
+                            extracted = true
+                            break
+                        }
+                        entry = sevenZFile.nextEntry
+                    }
+                    sevenZFile.close()
+                } else if (ext == "tar" || ext == "gz" || ext == "tgz" || archivePath.endsWith(".tar.gz", ignoreCase = true)) {
+                    val rawIn = FileInputStream(archiveFile)
+                    val inStream = if (ext == "gz" || ext == "tgz" || archivePath.endsWith(".tar.gz", ignoreCase = true)) {
+                        TarArchiveInputStream(GzipCompressorInputStream(BufferedInputStream(rawIn)))
+                    } else {
+                        TarArchiveInputStream(BufferedInputStream(rawIn))
+                    }
+                    var entry: TarArchiveEntry? = inStream.nextTarEntry
+                    while (entry != null) {
+                        if (entry.name == entryName) {
+                            val out = FileOutputStream(destFile)
+                            inStream.copyTo(out)
+                            out.close()
+                            extracted = true
+                            break
+                        }
+                        entry = inStream.nextTarEntry
+                    }
+                    inStream.close()
+                }
+
+                withContext(Dispatchers.Main) {
+                    if (extracted && destFile.exists()) {
+                        result.success(destFile.absolutePath)
+                    } else {
+                        result.error("NOT_FOUND", "Entry not found in archive: $entryName", null)
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    result.error("EXTRACT_ENTRY_ERROR", e.localizedMessage, null)
+                }
             }
         }
     }

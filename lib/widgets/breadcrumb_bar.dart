@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../providers/theme_provider.dart';
 import '../theme/colors.dart';
 import '../utils/file_utils.dart';
 
-class BreadcrumbBar extends StatelessWidget {
+class BreadcrumbBar extends ConsumerWidget {
   final String currentPath;
   final ValueChanged<String> onNavigate;
 
@@ -13,7 +15,8 @@ class BreadcrumbBar extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = ref.watch(themeProvider);
     final breadcrumbs = FileUtils.buildBreadcrumbs(currentPath);
 
     return Container(
@@ -45,10 +48,10 @@ class BreadcrumbBar extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: isLast
                     ? BoxDecoration(
-                        color: AppColors.accentTeal.withValues(alpha: 0.15),
+                        color: theme.primary.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
-                          color: AppColors.accentTeal.withValues(alpha: 0.3),
+                          color: theme.primary.withValues(alpha: 0.35),
                           width: 1,
                         ),
                       )
@@ -60,7 +63,7 @@ class BreadcrumbBar extends StatelessWidget {
                       Icon(
                         item.path == '/' ? Icons.storage_rounded : Icons.phone_android_rounded,
                         size: 16,
-                        color: isLast ? AppColors.accentTeal : AppColors.textSecondary,
+                        color: isLast ? theme.primary : AppColors.textSecondary,
                       ),
                       const SizedBox(width: 6),
                     ],
@@ -69,7 +72,7 @@ class BreadcrumbBar extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: isLast ? FontWeight.w600 : FontWeight.w400,
-                        color: isLast ? AppColors.accentTeal : AppColors.textSecondary,
+                        color: isLast ? theme.primary : AppColors.textSecondary,
                       ),
                     ),
                   ],

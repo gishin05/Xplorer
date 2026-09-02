@@ -1,10 +1,13 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/file_item.dart';
+import '../providers/file_explorer_provider.dart';
+import '../providers/theme_provider.dart';
 import '../theme/colors.dart';
 import '../utils/file_utils.dart';
-import 'glass_card.dart';
 
-class FileTile extends StatelessWidget {
+class FileTile extends ConsumerWidget {
   final FileItem item;
   final bool isSelected;
   final bool isSelectionMode;
@@ -23,47 +26,61 @@ class FileTile extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    final theme = _getIconTheme(item);
+  Widget build(BuildContext context, WidgetRef ref) {
+    final iconTheme = _getIconTheme(item);
+    final activeTheme = ref.watch(themeProvider);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
-      child: GlassCard(
-        onTap: onTap,
-        onLongPress: onLongPress,
-        isSelected: isSelected,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        borderRadius: 12,
+    return InkWell(
+      onTap: onTap,
+      onLongPress: onLongPress,
+      splashColor: activeTheme.primary.withValues(alpha: 0.15),
+      highlightColor: activeTheme.primary.withValues(alpha: 0.08),
+      child: Container(
+        decoration: BoxDecoration(
+          color: isSelected
+              ? activeTheme.primary.withValues(alpha: 0.18)
+              : Colors.transparent,
+          border: Border(
+            bottom: BorderSide(
+              color: AppColors.border.withValues(alpha: 0.4),
+              width: 0.5,
+            ),
+          ),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
         child: Row(
           children: [
             if (isSelectionMode) ...[
               Checkbox(
                 value: isSelected,
-                activeColor: AppColors.accentTeal,
+                activeColor: activeTheme.primary,
                 checkColor: Colors.black,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
                 onChanged: (_) => onTap(),
               ),
-              const SizedBox(width: 4),
+              const SizedBox(width: 8),
             ],
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: theme.color.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: theme.color.withValues(alpha: 0.3),
-                  width: 1,
+            // File / Folder / APK Icon
+            if (item.isApk)
+              _ApkIconWidget(
+                path: item.path,
+                fallbackColor: iconTheme.color,
+              )
+            else
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: iconTheme.color.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  iconTheme.icon,
+                  color: iconTheme.color,
+                  size: 22,
                 ),
               ),
-              child: Icon(
-                theme.icon,
-                color: theme.color,
-                size: 22,
-              ),
-            ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -206,4 +223,96 @@ class _IconThemeData {
   final Color color;
 
   const _IconThemeData({required this.icon, required this.color});
+}
+
+class _ApkIconWidget extends ConsumerStatefulWidget {
+  final String path;
+  final Color fallbackColor;
+
+  const _ApkIconWidget({
+    required this.path,
+    required this.fallbackColor,
+  });
+
+  static final Map<String, Uint8List?> _iconCache = {};
+
+  @override
+  ConsumerState<_ApkIconWidget> createState() => _ApkIconWidgetState();
+}
+
+class _ApkIconWidgetState extends ConsumerState<_ApkIconWidget> {
+  Uint8List? _iconBytes;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadIcon();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ApkIconWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.path != widget.path) {
+      _loadIcon();
+    }
+  }
+
+  Future<void> _loadIcon() async {
+    if (_ApkIconWidget._iconCache.containsKey(widget.path)) {
+      if (mounted) {
+        setState(() {
+          _iconBytes = _ApkIconWidget._iconCache[widget.path];
+        });
+      }
+      return;
+    }
+
+    final bytes = await ref.read(platformServiceProvider).getApkIcon(widget.path);
+    _ApkIconWidget._iconCache[widget.path] = bytes;
+
+    if (mounted) {
+      setState(() {
+        _iconBytes = bytes;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_iconBytes != null) {
+      return Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Image.memory(
+          _iconBytes!,
+          width: 38,
+          height: 38,
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => _buildFallback(),
+        ),
+      );
+    }
+
+    return _buildFallback();
+  }
+
+  Widget _buildFallback() {
+    return Container(
+      width: 38,
+      height: 38,
+      decoration: BoxDecoration(
+        color: widget.fallbackColor.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Icon(
+        Icons.android_rounded,
+        color: widget.fallbackColor,
+        size: 22,
+      ),
+    );
+  }
 }

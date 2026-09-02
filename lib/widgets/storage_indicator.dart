@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/storage_volume.dart';
+import '../providers/theme_provider.dart';
 import '../theme/colors.dart';
 import '../utils/file_utils.dart';
 import 'glass_card.dart';
 
-class StorageIndicator extends StatelessWidget {
+class StorageIndicator extends ConsumerWidget {
   final StorageVolume? volume;
   final VoidCallback? onTap;
 
@@ -15,7 +17,8 @@ class StorageIndicator extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = ref.watch(themeProvider);
     final vol = volume;
     final usedStr = vol != null ? FileUtils.formatBytes(vol.usedBytes) : '...';
     final totalStr = vol != null ? FileUtils.formatBytes(vol.totalBytes) : '...';
@@ -35,17 +38,17 @@ class StorageIndicator extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: AppColors.accentTeal.withValues(alpha: 0.15),
+                    color: theme.primary.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(
-                      color: AppColors.accentTeal.withValues(alpha: 0.3),
+                      color: theme.primary.withValues(alpha: 0.35),
                       width: 1,
                     ),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.storage_rounded,
                     size: 20,
-                    color: AppColors.accentTeal,
+                    color: theme.primary,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -81,10 +84,10 @@ class StorageIndicator extends StatelessWidget {
                   ),
                   child: Text(
                     percentStr,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
-                      color: AppColors.accentTeal,
+                      color: theme.primary,
                     ),
                   ),
                 ),
@@ -98,7 +101,7 @@ class StorageIndicator extends StatelessWidget {
                 minHeight: 6,
                 backgroundColor: AppColors.surfaceDark,
                 valueColor: AlwaysStoppedAnimation<Color>(
-                  percent > 0.9 ? AppColors.danger : AppColors.accentTeal,
+                  percent > 0.9 ? AppColors.danger : theme.primary,
                 ),
               ),
             ),

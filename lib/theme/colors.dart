@@ -9,6 +9,7 @@ class AppColors {
 
   // Borders and dividers
   static const Color glassBorder = Color(0xFF2B3242);
+  static const Color border = Color(0xFF2B3242);
   static const Color glassBorderActive = Color(0xFF00897B);
   static const Color divider = Color(0xFF252B38);
 
@@ -38,4 +39,5 @@ class AppColors {
   static const Color success = Color(0xFF2E7D32);
   static const Color warning = Color(0xFFF57F17);
   static const Color danger = Color(0xFFD32F2F);
+  static const Color error = Color(0xFFD32F2F);
 }

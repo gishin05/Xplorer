@@ -1,17 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/file_item.dart';
 import '../providers/adb_bridge_provider.dart';
 import '../providers/file_explorer_provider.dart';
+import '../providers/theme_provider.dart';
 import '../theme/colors.dart';
 import '../widgets/archive_dialogs.dart';
 import '../widgets/breadcrumb_bar.dart';
-import '../widgets/developer_options_dialog.dart';
+import '../widgets/cracked_x_logo.dart';
 import '../widgets/file_tile.dart';
 import '../widgets/sort_filter_sheet.dart';
 import '../widgets/storage_indicator.dart';
 import 'file_details_screen.dart';
 import 'settings_screen.dart';
+import 'viewers/archive_viewer_screen.dart';
 import 'viewers/image_viewer_screen.dart';
 import 'viewers/media_player_modal.dart';
 import 'viewers/pdf_viewer_screen.dart';
@@ -29,32 +32,16 @@ class _ExplorerScreenState extends ConsumerState<ExplorerScreen>
   bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  DateTime? _lastBackPressTime;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkAndPromptDeveloperOptions();
+    Future.microtask(() {
+      ref.read(fileExplorerProvider.notifier).initialize();
+      ref.read(adbBridgeProvider.notifier).checkDeveloperOptionsAndBridge();
     });
-  }
-
-  void _checkAndPromptDeveloperOptions() async {
-    // Proactively verify real-time developer options state before prompting
-    await ref.read(adbBridgeProvider.notifier).checkDeveloperOptionsAndBridge();
-    final adbState = ref.read(adbBridgeProvider);
-    // If Developer Options is already enabled, NEVER display the prompt!
-    if (!adbState.isDevOptionsEnabled && !adbState.hasDismissedPrompt && mounted) {
-      DeveloperOptionsDialog.show(
-        context,
-        onOpenSettings: () {
-          ref.read(adbBridgeProvider.notifier).openDeveloperSettings();
-        },
-        onDismiss: () {
-          ref.read(adbBridgeProvider.notifier).dismissPrompt();
-        },
-      );
-    }
   }
 
   @override
@@ -93,7 +80,7 @@ class _ExplorerScreenState extends ConsumerState<ExplorerScreen>
   @override
   Widget build(BuildContext context) {
     final explorerState = ref.watch(fileExplorerProvider);
-    final adbState = ref.watch(adbBridgeProvider);
+    final currentTheme = ref.watch(themeProvider);
     final notifier = ref.read(fileExplorerProvider.notifier);
 
     final isRoot = explorerState.currentPath == '/' ||
@@ -106,9 +93,13 @@ class _ExplorerScreenState extends ConsumerState<ExplorerScreen>
         backgroundColor: AppColors.surfaceDark.withValues(alpha: 0.9),
         elevation: 0,
         leading: isRoot
-            ? const Padding(
-                padding: EdgeInsets.all(12.0),
-                child: Icon(Icons.folder_special_rounded, color: AppColors.accentTeal),
+            ? Padding(
+                padding: const EdgeInsets.all(12.0),
+                child: CrackedXLogo(
+                  size: 24,
+                  accentColor: currentTheme.primary,
+                  showBackground: false,
+                ),
               )
             : IconButton(
                 icon: const Icon(Icons.arrow_back_rounded, color: AppColors.textPrimary),
@@ -125,7 +116,7 @@ class _ExplorerScreenState extends ConsumerState<ExplorerScreen>
                 controller: _searchController,
                 autofocus: true,
                 style: const TextStyle(color: AppColors.textPrimary),
-                cursorColor: AppColors.accentTeal,
+                cursorColor: currentTheme.primary,
                 decoration: InputDecoration(
                   hintText: 'Search files in folder...',
                   hintStyle: const TextStyle(color: AppColors.textMuted),
@@ -179,7 +170,7 @@ class _ExplorerScreenState extends ConsumerState<ExplorerScreen>
           ),
           if (explorerState.isSelectionMode)
             IconButton(
-              icon: const Icon(Icons.select_all_rounded, color: AppColors.accentTeal),
+              icon: Icon(Icons.select_all_rounded, color: currentTheme.primary),
               onPressed: () => notifier.selectAll(),
             )
           else
@@ -197,156 +188,193 @@ class _ExplorerScreenState extends ConsumerState<ExplorerScreen>
           ),
         ],
       ),
-      body: Column(
-        children: [
-          BreadcrumbBar(
-            currentPath: explorerState.currentPath,
-            onNavigate: (path) => notifier.navigateTo(path),
-          ),
-          if (explorerState.clipboard != null)
-            _buildClipboardPasteBar(context, explorerState, notifier),
-          Expanded(
-            child: RefreshIndicator(
-              color: AppColors.accentTeal,
-              backgroundColor: AppColors.surfaceDark,
-              onRefresh: () => notifier.loadDirectory(explorerState.currentPath),
-              child: Scrollbar(
-                controller: _scrollController,
-                thumbVisibility: true,
-                interactive: true,
-                thickness: 5,
-                radius: const Radius.circular(3),
-                child: CustomScrollView(
+      body: PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, result) {
+          if (didPop) return;
+
+          // 1. If in selection mode, clear selection first
+          if (explorerState.isSelectionMode) {
+            notifier.clearSelection();
+            return;
+          }
+
+          // 2. If searching, cancel search
+          if (_isSearching) {
+            setState(() {
+              _isSearching = false;
+              _searchController.clear();
+              notifier.setSearchQuery('');
+            });
+            return;
+          }
+
+          // 3. If in a subdirectory, navigate up!
+          final isAtRoot = explorerState.currentPath == '/' ||
+              explorerState.currentPath == '/storage/emulated/0';
+
+          if (!isAtRoot) {
+            notifier.navigateUp();
+            return;
+          }
+
+          // 4. Double back to exit at root
+          final now = DateTime.now();
+          if (_lastBackPressTime == null ||
+              now.difference(_lastBackPressTime!) > const Duration(seconds: 2)) {
+            _lastBackPressTime = now;
+            ScaffoldMessenger.of(context).removeCurrentSnackBar();
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text('Press back again to exit'),
+                duration: const Duration(seconds: 2),
+                backgroundColor: AppColors.surfaceGlass,
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+            );
+          } else {
+            SystemNavigator.pop();
+          }
+        },
+        child: Column(
+          children: [
+            BreadcrumbBar(
+              currentPath: explorerState.currentPath,
+              onNavigate: (path) => notifier.navigateTo(path),
+            ),
+            if (explorerState.clipboard != null)
+              _buildClipboardPasteBar(context, explorerState, notifier),
+            Expanded(
+              child: RefreshIndicator(
+                color: currentTheme.primary,
+                backgroundColor: AppColors.surfaceDark,
+                onRefresh: () => notifier.loadDirectory(explorerState.currentPath),
+                child: Scrollbar(
                   controller: _scrollController,
-                  physics: const AlwaysScrollableScrollPhysics(
-                    parent: BouncingScrollPhysics(),
-                  ),
-                  slivers: [
-                    // Scrollable Header: ADB Bridge Banner
-                    SliverToBoxAdapter(
-                      child: _buildAdbBridgeBanner(context, adbState, explorerState, notifier),
+                  thumbVisibility: true,
+                  interactive: true,
+                  thickness: 5,
+                  radius: const Radius.circular(3),
+                  child: CustomScrollView(
+                    controller: _scrollController,
+                    physics: const AlwaysScrollableScrollPhysics(
+                      parent: BouncingScrollPhysics(),
                     ),
+                    slivers: [
+                      // Scrollable Header: Storage Indicator & Browse Installed APKs
+                      if (isRoot && explorerState.volume != null) ...[
+                        SliverToBoxAdapter(
+                          child: StorageIndicator(volume: explorerState.volume),
+                        ),
+                        SliverToBoxAdapter(
+                          child: _buildQuickAccessRow(context, notifier, currentTheme),
+                        ),
+                      ],
 
-                    // Scrollable Header: Storage Indicator & Browse Installed APKs
-                    if (isRoot && explorerState.volume != null) ...[
-                      SliverToBoxAdapter(
-                        child: StorageIndicator(volume: explorerState.volume),
-                      ),
-                      SliverToBoxAdapter(
-                        child: _buildQuickAccessRow(context, notifier),
-                      ),
-                    ],
-
-                    // Scrollable Error Banner if any
-                    if (explorerState.errorMessage != null)
-                      SliverToBoxAdapter(
-                        child: Container(
-                          margin: const EdgeInsets.all(16),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: AppColors.danger.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: AppColors.danger.withValues(alpha: 0.3)),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.warning_amber_rounded, color: AppColors.danger, size: 20),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  explorerState.errorMessage!,
-                                  style: const TextStyle(color: AppColors.textPrimary, fontSize: 13),
+                      // Scrollable Error Banner if any
+                      if (explorerState.errorMessage != null)
+                        SliverToBoxAdapter(
+                          child: Container(
+                            margin: const EdgeInsets.all(16),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: AppColors.danger.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: AppColors.danger.withValues(alpha: 0.3)),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.warning_amber_rounded, color: AppColors.danger, size: 20),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    explorerState.errorMessage!,
+                                    style: const TextStyle(color: AppColors.textPrimary, fontSize: 13),
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
-                      ),
 
-                    // Directory Items / Loading / Empty
-                    if (explorerState.isLoading)
-                      const SliverFillRemaining(
-                        hasScrollBody: false,
-                        child: Center(
-                          child: CircularProgressIndicator(color: AppColors.accentTeal),
-                        ),
-                      )
-                    else if (items.isEmpty)
-                      SliverFillRemaining(
-                        hasScrollBody: false,
-                        child: Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                Icons.folder_open_rounded,
-                                size: 64,
-                                color: AppColors.textMuted.withValues(alpha: 0.5),
-                              ),
-                              const SizedBox(height: 12),
-                              const Text(
-                                'This folder is empty',
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w500,
-                                  color: AppColors.textSecondary,
+                      if (items.isEmpty && !explorerState.isLoading)
+                        SliverFillRemaining(
+                          hasScrollBody: false,
+                          child: Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  _isSearching ? Icons.search_off_rounded : Icons.folder_open_rounded,
+                                  size: 64,
+                                  color: AppColors.textMuted.withValues(alpha: 0.5),
                                 ),
-                              ),
-                            ],
+                                const SizedBox(height: 16),
+                                Text(
+                                  _isSearching ? 'No files match "${explorerState.searchQuery}"' : 'This folder is empty',
+                                  style: const TextStyle(
+                                    fontSize: 15,
+                                    color: AppColors.textSecondary,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                      )
-                    else
-                      SliverList(
-                        delegate: SliverChildBuilderDelegate(
-                          (context, index) {
-                            final item = items[index];
-                            final isSelected =
-                                explorerState.selectedPaths.contains(item.path);
+                        )
+                      else
+                        SliverList(
+                          delegate: SliverChildBuilderDelegate(
+                            (context, index) {
+                              final item = items[index];
+                              final isSelected =
+                                  explorerState.selectedPaths.contains(item.path);
 
-                            return FileTile(
-                              key: ValueKey(item.path),
-                              item: item,
-                              isSelected: isSelected,
-                              isSelectionMode: explorerState.isSelectionMode,
-                              onTap: () {
-                                if (explorerState.isSelectionMode) {
+                              return FileTile(
+                                key: ValueKey(item.path),
+                                item: item,
+                                isSelected: isSelected,
+                                isSelectionMode: explorerState.isSelectionMode,
+                                onTap: () {
+                                  if (explorerState.isSelectionMode) {
+                                    notifier.toggleSelection(item.path);
+                                  } else if (item.isDirectory) {
+                                    setState(() {
+                                      _isSearching = false;
+                                      _searchController.clear();
+                                    });
+                                    notifier.navigateTo(item.path);
+                                  } else {
+                                    _openFile(context, item);
+                                  }
+                                },
+                                onLongPress: () {
                                   notifier.toggleSelection(item.path);
-                                } else if (item.isDirectory) {
-                                  setState(() {
-                                    _isSearching = false;
-                                    _searchController.clear();
-                                  });
-                                  notifier.navigateTo(item.path);
-                                } else {
-                                  _openFile(context, item);
-                                }
-                              },
-                              onLongPress: () {
-                                notifier.toggleSelection(item.path);
-                              },
-                              onMoreOptions: () {
-                                _showItemOptionsModal(context, item, notifier);
-                              },
-                            );
-                          },
-                          childCount: items.length,
+                                },
+                                onMoreOptions: () {
+                                  _showItemOptionsModal(context, item, notifier);
+                                },
+                              );
+                            },
+                            childCount: items.length,
+                          ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-          if (explorerState.isSelectionMode)
-            _buildSelectionBottomBar(context, explorerState, notifier),
-        ],
+            if (explorerState.isSelectionMode)
+              _buildSelectionBottomBar(context, explorerState, notifier, currentTheme),
+          ],
+        ),
       ),
       floatingActionButton: explorerState.isSelectionMode
           ? null
           : FloatingActionButton(
-              backgroundColor: AppColors.accentTeal,
-              foregroundColor: Colors.black,
+              backgroundColor: currentTheme.primary,
+              foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               onPressed: () => _showCreateFolderDialog(context, notifier),
               child: const Icon(Icons.create_new_folder_rounded, size: 24),
@@ -358,6 +386,7 @@ class _ExplorerScreenState extends ConsumerState<ExplorerScreen>
     BuildContext context,
     FileExplorerState state,
     FileExplorerNotifier notifier,
+    AppThemeColor currentTheme,
   ) {
     final count = state.selectedPaths.length;
     final selectedList = state.selectedPaths.toList();
@@ -375,8 +404,8 @@ class _ExplorerScreenState extends ConsumerState<ExplorerScreen>
           children: [
             Text(
               '$count selected',
-              style: const TextStyle(
-                color: AppColors.accentTeal,
+              style: TextStyle(
+                color: currentTheme.primary,
                 fontWeight: FontWeight.w600,
                 fontSize: 13,
               ),
@@ -396,7 +425,7 @@ class _ExplorerScreenState extends ConsumerState<ExplorerScreen>
               },
             ),
             IconButton(
-              tooltip: 'Cut (Move)',
+              tooltip: 'Cut',
               icon: const Icon(Icons.content_cut_rounded, size: 20, color: AppColors.textPrimary),
               onPressed: () {
                 notifier.cutSelection(selectedList);
@@ -477,7 +506,9 @@ class _ExplorerScreenState extends ConsumerState<ExplorerScreen>
         ),
       );
     } else if (item.isArchive) {
-      _showArchiveExtractModal(context, item, ref.read(fileExplorerProvider.notifier));
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => ArchiveViewerScreen(archiveItem: item)),
+      );
     } else if (textExts.contains(ext)) {
       Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => TextEditorScreen(item: item)),
@@ -520,6 +551,28 @@ class _ExplorerScreenState extends ConsumerState<ExplorerScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            ListTile(
+              leading: const Icon(Icons.open_in_browser_rounded, color: AppColors.textPrimary),
+              title: const Text('Open', style: TextStyle(color: AppColors.textPrimary)),
+              onTap: () {
+                Navigator.pop(context);
+                if (item.isArchive) {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => ArchiveViewerScreen(archiveItem: item)),
+                  );
+                } else {
+                  _openFile(context, item);
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.open_in_new_rounded, color: AppColors.textPrimary),
+              title: const Text('Open In', style: TextStyle(color: AppColors.textPrimary)),
+              onTap: () {
+                Navigator.pop(context);
+                ref.read(platformServiceProvider).openFileWithSystemApp(item.path);
+              },
+            ),
             if (item.isArchive)
               ListTile(
                 leading: const Icon(Icons.unarchive_rounded, color: AppColors.archivePurple),
@@ -545,7 +598,7 @@ class _ExplorerScreenState extends ConsumerState<ExplorerScreen>
             ),
             ListTile(
               leading: const Icon(Icons.content_cut_rounded, color: AppColors.textPrimary),
-              title: const Text('Cut (Move)', style: TextStyle(color: AppColors.textPrimary)),
+              title: const Text('Cut', style: TextStyle(color: AppColors.textPrimary)),
               onTap: () {
                 Navigator.pop(context);
                 notifier.cutSelection([item.path]);
@@ -559,7 +612,7 @@ class _ExplorerScreenState extends ConsumerState<ExplorerScreen>
             ),
             ListTile(
               leading: const Icon(Icons.archive_rounded, color: AppColors.textPrimary),
-              title: const Text('Compress to Archive...', style: TextStyle(color: AppColors.textPrimary)),
+              title: const Text('Compress', style: TextStyle(color: AppColors.textPrimary)),
               onTap: () {
                 Navigator.pop(context);
                 _showCompressDialog(context, [item.path], notifier);
@@ -1005,101 +1058,11 @@ class _ExplorerScreenState extends ConsumerState<ExplorerScreen>
     );
   }
 
-  Widget _buildAdbBridgeBanner(
+  Widget _buildQuickAccessRow(
     BuildContext context,
-    AdbBridgeState adbState,
-    FileExplorerState explorerState,
     FileExplorerNotifier notifier,
+    AppThemeColor currentTheme,
   ) {
-    final isProtectedDir = explorerState.currentPath.contains('Android/data') ||
-        explorerState.currentPath.contains('Android/obb');
-
-    if (adbState.isConnected) {
-      return Container(
-        margin: const EdgeInsets.fromLTRB(16, 6, 16, 6),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-        decoration: BoxDecoration(
-          color: AppColors.accentTeal.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: AppColors.accentTeal.withValues(alpha: 0.25)),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 7,
-              height: 7,
-              decoration: const BoxDecoration(
-                color: AppColors.accentTeal,
-                shape: BoxShape.circle,
-              ),
-            ),
-            const SizedBox(width: 8),
-            const Expanded(
-              child: Text(
-                'Wireless ADB Auto-Bridge: Active (Elevated Access)',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.accentTeal,
-                ),
-              ),
-            ),
-            const Text(
-              'CONNECTED',
-              style: TextStyle(
-                fontSize: 9,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.6,
-                color: AppColors.accentTealLight,
-              ),
-            ),
-          ],
-        ),
-      );
-    } else if (isProtectedDir) {
-      return Container(
-        margin: const EdgeInsets.fromLTRB(16, 6, 16, 6),
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: AppColors.folderGold.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: AppColors.folderGold.withValues(alpha: 0.3)),
-        ),
-        child: Row(
-          children: [
-            const Expanded(
-              child: Text(
-                'Developer Options is required to unlock /Android/data and APK packages.',
-                style: TextStyle(fontSize: 11, color: AppColors.folderGold),
-              ),
-            ),
-            TextButton(
-              style: TextButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              onPressed: () {
-                ref.read(adbBridgeProvider.notifier).openDeveloperSettings();
-              },
-              child: const Text(
-                'ENABLE',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.folderGold,
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return const SizedBox.shrink();
-  }
-
-  Widget _buildQuickAccessRow(BuildContext context, FileExplorerNotifier notifier) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       child: Row(
@@ -1117,7 +1080,7 @@ class _ExplorerScreenState extends ConsumerState<ExplorerScreen>
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(color: AppColors.glassBorder),
                 ),
-                child: const Row(
+                child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
@@ -1125,7 +1088,7 @@ class _ExplorerScreenState extends ConsumerState<ExplorerScreen>
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
-                        color: AppColors.accentTeal,
+                        color: currentTheme.primary,
                       ),
                     ),
                   ],
